@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"id": "donutprofithud",
+	"version": "${version}",
+	"name": "Donut Profit HUD",
+	"description": "Client-side HUD that tracks confirmed DonutSMP player payments (received minus paid) by reading the server's own payment confirmations. Never sends commands or payments.",
+	"authors": ["Donut Profit HUD"],
+	"license": "CC0-1.0",
+	"icon": "assets/donutprofithud/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["dev.donutprofithud.DonutProfitHudClient"]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

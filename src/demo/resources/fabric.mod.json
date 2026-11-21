@@ -1,0 +1,13 @@
+{
+	"schemaVersion": 1,
+	"id": "donutprofithud_demo",
+	"version": "0.0.0",
+	"name": "Donut Profit HUD screenshot helper (dev only)",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["dev.donutprofithud.demo.DemoScreenshots"]
+	},
+	"depends": {
+		"donutprofithud": "*"
+	}
+}
