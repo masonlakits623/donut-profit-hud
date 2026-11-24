@@ -1,5 +1,7 @@
 # Donut Profit HUD
 
+> **Branch `mc/26.3`**: this branch builds the **Minecraft 26.3** jar (JDK 25). The 1.21.11 version is on `main`.
+
 Client-side Fabric mod for Minecraft Java **1.21.11** and **26.3**. It shows a small banner (top centre by default) with
 your **profit for today = received − paid** from confirmed DonutSMP player payments, briefly flashes each payment
 (`+$3M` green / `-$3M` red), draws a graph of your profit through the day and keeps a history of every day. Type `/bal`

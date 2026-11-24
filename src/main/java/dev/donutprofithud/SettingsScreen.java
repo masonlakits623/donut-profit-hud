@@ -12,7 +12,7 @@ import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 import java.util.function.DoubleFunction;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -22,7 +22,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 
 /**
  * Banner editor in the style of the Textboxes mod: the world stays visible, the banner is dragged to
@@ -159,7 +158,7 @@ public final class SettingsScreen extends Screen {
 			rebuildWidgets();
 		});
 		tool("Reset...", TOOL_WIDTHS[3], true, this::confirmReset);
-		tool("History", TOOL_WIDTHS[4], true, () -> minecraft.setScreen(new HistoryScreen(this)));
+		tool("History", TOOL_WIDTHS[4], true, () -> minecraft.gui.setScreen(new HistoryScreen(this)));
 		String pm = switch (panelMode) { case RIGHT -> "Right"; case LEFT -> "Left"; case HIDDEN -> "Off"; };
 		tool("Panel: " + pm, TOOL_WIDTHS[5], true, () -> {
 			panelMode = PanelMode.values()[(panelMode.ordinal() + 1) % PanelMode.values().length];
@@ -308,7 +307,7 @@ public final class SettingsScreen extends Screen {
 		hd.active = c.extra == HudConfig.Extra.HISTORY;
 		panel(new Slider(px, iw, "New day at", 0, 23, 1, c.dayStartHour,
 			v -> String.format(Locale.ROOT, "%02d:00", (int) Math.round(v)), v -> c.dayStartHour = (int) Math.round(v)), 6);
-		panel(button(px, iw, "Open history (H)", () -> minecraft.setScreen(new HistoryScreen(this))), 7);
+		panel(button(px, iw, "Open history (H)", () -> minecraft.gui.setScreen(new HistoryScreen(this))), 7);
 		var d = mod.today();
 		label(8, px, "Today: " + Money.formatSigned(d.net()) + " (" + d.count + " payments)",
 			0xFF000000 | HudRenderer.netColor(c, d.net()));
@@ -350,9 +349,8 @@ public final class SettingsScreen extends Screen {
 		hexField = new EditBox(font, px + 30, 0, 52, WH, Component.literal("Hex"));
 		hexField.setMaxLength(6);
 		hexField.setValue(String.format("%06X", rgb));
-		hexField.setFilter(s -> s.matches("[0-9a-fA-F]{0,6}"));
 		hexField.setResponder(s -> {
-			if (syncing || s.length() != 6) return;
+			if (syncing || !s.matches("[0-9a-fA-F]{6}")) return;
 			int v = Integer.parseInt(s, 16);
 			setRgb(v);
 			syncSliders(v);
@@ -438,9 +436,9 @@ public final class SettingsScreen extends Screen {
 
 	private void confirmReset() {
 		boolean session = cfg().shows == HudConfig.Shows.SESSION;
-		minecraft.setScreen(new ConfirmScreen(yes -> {
+		minecraft.gui.setScreen(new ConfirmScreen(yes -> {
 			if (yes) DonutProfitHudClient.get().resetShown();
-			minecraft.setScreen(this);
+			minecraft.gui.setScreen(this);
 		},
 			Component.literal(session ? "Reset session totals?" : "Reset today's profit?"),
 			Component.literal(session
@@ -555,15 +553,13 @@ public final class SettingsScreen extends Screen {
 			|| getFocused() instanceof AbstractSliderButton s && s.isFocused();
 		if (!typing) {
 			HudConfig c = cfg();
-			int step = (input.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0 ? 10 : 1;
+			int step = input.hasShiftDown() ? 10 : 1;
 			boolean moved = true;
-			switch (input.key()) {
-				case GLFW.GLFW_KEY_LEFT -> c.xFraction = Math.max(0, c.xFraction - (double) step / Math.max(1, width));
-				case GLFW.GLFW_KEY_RIGHT -> c.xFraction = Math.min(1, c.xFraction + (double) step / Math.max(1, width));
-				case GLFW.GLFW_KEY_UP -> c.y = Math.max(0, c.y - step);
-				case GLFW.GLFW_KEY_DOWN -> c.y = c.y + step;
-				default -> moved = false;
-			}
+			if (input.isLeft()) c.xFraction = Math.max(0, c.xFraction - (double) step / Math.max(1, width));
+			else if (input.isRight()) c.xFraction = Math.min(1, c.xFraction + (double) step / Math.max(1, width));
+			else if (input.isUp()) c.y = Math.max(0, c.y - step);
+			else if (input.isDown()) c.y = c.y + step;
+			else moved = false;
 			if (moved) {
 				if (toolbarTop() != toolbarTopUsed) rebuildWidgets();
 				return true;
@@ -575,12 +571,12 @@ public final class SettingsScreen extends Screen {
 	// ------------------------------------------------------------------ render
 
 	@Override
-	public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float delta) {
+	public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
 		// Keep the world visible behind the editor (no blur / dim), like Textboxes.
 	}
 
 	@Override
-	public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
 		HudConfig c = cfg();
 		long now = System.currentTimeMillis();
 		BigDecimal f = c.flashEnabled ? previewFlash.active(now, c.flashMs) : null;
@@ -593,26 +589,26 @@ public final class SettingsScreen extends Screen {
 		int bx = (int) Math.floor(b.left()), by = (int) Math.floor(b.top());
 		int bw = (int) Math.ceil(b.width()), bh = (int) Math.ceil(b.height());
 		boolean hover = drag == Drag.NONE && !inPanel(mouseX, mouseY) && b.contains(mouseX, mouseY);
-		g.renderOutline(bx - 1, by - 1, bw + 2, bh + 2, hover || drag != Drag.NONE ? 0xFFFFFFFF : 0xFFFFD700);
+		g.outline(bx - 1, by - 1, bw + 2, bh + 2, hover || drag != Drag.NONE ? 0xFFFFFFFF : 0xFFFFD700);
 		int hx = bx + bw, hy = by + bh;
 		// Handle sits on the corner, outside the box, so it never covers the amount.
 		g.fill(hx - 1, hy - 1, hx + HANDLE - 1, hy + HANDLE - 1, 0xFFFFD700);
 		String info = "Size " + Math.round(c.scale * 100) + "%" + (c.visible ? "" : "  (hidden in HUD)");
 		int infoY = by + Math.round(HudRenderer.stackHeight(c, v, b)) + 3
 			+ (f != null ? Math.round((font.lineHeight + 6) * c.scale) : 0);
-		g.drawString(font, info, bx, Math.min(infoY, height - 24), c.visible ? 0xFFFFD700 : 0xFFFF5555, true);
+		g.text(font, info, bx, Math.min(infoY, height - 24), c.visible ? 0xFFFFD700 : 0xFFFF5555, true);
 
 		if (panelVisible()) {
 			g.fill(panelX, panelY, panelX + PANEL_W, panelBottom, 0xD0101018);
-			g.renderOutline(panelX, panelY, PANEL_W, panelBottom - panelY, 0xFF505060);
+			g.outline(panelX, panelY, PANEL_W, panelBottom - panelY, 0xFF505060);
 		}
 
-		super.render(g, mouseX, mouseY, delta);
+		super.extractRenderState(g, mouseX, mouseY, delta);
 
 		if (panelVisible()) {
 			for (Label l : labels) {
 				if (rowVisible(l.row())) {
-					g.drawString(font, l.text(), l.x(), rowY(l.row()) + 4, l.color(), false);
+					g.text(font, l.text(), l.x(), rowY(l.row()) + 4, l.color(), false);
 				}
 			}
 			if (tab == Tab.COLOR) renderColorExtras(g);
@@ -626,16 +622,16 @@ public final class SettingsScreen extends Screen {
 		}
 
 		String hint = "Drag: move | Gold corner: resize | Arrows: nudge (Shift = 10) | Esc: done";
-		g.drawString(font, font.plainSubstrByWidth(hint, width - 8), 4, height - 12, 0xFFAAAAAA, true);
+		g.text(font, font.plainSubstrByWidth(hint, width - 8), 4, height - 12, 0xFFAAAAAA, true);
 	}
 
-	private void renderColorExtras(GuiGraphics g) {
+	private void renderColorExtras(GuiGraphicsExtractor g) {
 		int rgb = getRgb();
 		if (rowVisible(5)) {
 			int y = rowY(5);
 			int x1 = px + 86, x2 = px + iw;
 			g.fill(x1, y, x2, y + WH, 0xFF000000 | rgb);
-			g.renderOutline(x1, y, x2 - x1, WH, 0xFFFFFFFF);
+			g.outline(x1, y, x2 - x1, WH, 0xFFFFFFFF);
 		}
 		int cw = swatchCell();
 		for (int i = 0; i < SWATCHES.length; i++) {
@@ -644,7 +640,7 @@ public final class SettingsScreen extends Screen {
 			int x = px + (i % 8) * cw;
 			int y = rowY(row) + 2;
 			g.fill(x + 1, y, x + cw - 1, y + 12, 0xFF000000 | SWATCHES[i]);
-			g.renderOutline(x + 1, y, cw - 2, 12, SWATCHES[i] == rgb ? 0xFFFFD700 : 0xFF303030);
+			g.outline(x + 1, y, cw - 2, 12, SWATCHES[i] == rgb ? 0xFFFFD700 : 0xFF303030);
 		}
 	}
 
@@ -659,7 +655,7 @@ public final class SettingsScreen extends Screen {
 
 	@Override
 	public void onClose() {
-		minecraft.setScreen(parent);
+		minecraft.gui.setScreen(parent);
 	}
 
 	@Override

@@ -19,7 +19,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
@@ -27,7 +27,6 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
-import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
@@ -51,10 +50,10 @@ public final class DemoScreenshots implements ClientModInitializer {
 
 	private void tick(Minecraft mc) {
 		if (!worldRequested) {
-			if (mc.screen instanceof TitleScreen title && mc.level == null) {
+			if (mc.gui.screen() instanceof TitleScreen title && mc.level == null) {
 				worldRequested = true;
-				LevelSettings settings = new LevelSettings("Demo", GameType.CREATIVE, false, Difficulty.PEACEFUL, true,
-					new GameRules(WorldDataConfiguration.DEFAULT.enabledFeatures()), WorldDataConfiguration.DEFAULT);
+				LevelSettings settings = new LevelSettings("Demo", GameType.CREATIVE,
+					new LevelSettings.DifficultySettings(Difficulty.PEACEFUL, false, false), true, WorldDataConfiguration.DEFAULT);
 				mc.createWorldOpenFlows().createFreshLevel("Demo", settings, new WorldOptions(SEED, true, false),
 					WorldPresets::createNormalWorldDimensions, title);
 			}
@@ -93,27 +92,27 @@ public final class DemoScreenshots implements ClientModInitializer {
 			case 348 -> shot(mc, "1-incoming-payment");
 			case 400 -> pay(mc, mod, outgoing("CoinCollector42", "6M", "120K"));
 			case 408 -> shot(mc, "2-outgoing-payment");
-			case 470 -> mc.setScreen(new SettingsScreen(null));
+			case 470 -> mc.gui.setScreen(new SettingsScreen(null));
 			case 500 -> shot(mc, "3-editor-banner-tab");
 			case 510 -> {
 				setStatic("tab", "DAILY");
-				mc.setScreen(new SettingsScreen(null));
+				mc.gui.setScreen(new SettingsScreen(null));
 			}
 			case 540 -> shot(mc, "4-editor-daily-tab");
 			case 550 -> {
 				setStatic("tab", "COLOR");
 				setStatic("colorTarget", "BACKGROUND");
-				mc.setScreen(new SettingsScreen(null));
+				mc.gui.setScreen(new SettingsScreen(null));
 			}
 			case 580 -> shot(mc, "5-editor-color-tab");
 			case 590 -> {
 				setStatic("tab", "BANNER");
 				setStatic("colorTarget", "POSITIVE");
-				mc.setScreen(new HistoryScreen(null));
+				mc.gui.setScreen(new HistoryScreen(null));
 			}
 			case 620 -> shot(mc, "6-history-screen");
 			case 630 -> {
-				mc.setScreen(null);
+				mc.gui.setScreen(null);
 				c.extra = HudConfig.Extra.HISTORY;
 			}
 			case 660 -> shot(mc, "7-past-days");
@@ -134,10 +133,10 @@ public final class DemoScreenshots implements ClientModInitializer {
 			}
 			case 720 -> pay(mc, mod, incoming("CoinCollector42", "18M"));
 			case 728 -> shot(mc, "8-custom-style");
-			case 740 -> mc.setScreen(new FontGallery());
+			case 740 -> mc.gui.setScreen(new FontGallery());
 			case 770 -> shot(mc, "9-fonts");
 			case 790 -> {
-				mc.setScreen(null);
+				mc.gui.setScreen(null);
 				// back to defaults so the dev config does not keep the demo style
 				copyStyle(new HudConfig(), c);
 				mod.saveConfig();
@@ -217,7 +216,7 @@ public final class DemoScreenshots implements ClientModInitializer {
 
 	/** Shows the line in chat via the normal system-message path, then applies parse + ledger + history + flash. */
 	private static void pay(Minecraft mc, DonutProfitHudClient mod, Component line) {
-		mc.getChatListener().handleSystemMessage(line, false);
+		mc.gui.chatListener().handleSystemMessage(line, false);
 		Optional<Payment> p = PaymentParser.parse(line.getString());
 		if (p.isEmpty()) throw new IllegalStateException("demo line did not parse: " + line.getString());
 		long now = System.currentTimeMillis();
@@ -231,14 +230,14 @@ public final class DemoScreenshots implements ClientModInitializer {
 	private static void balance(Minecraft mc, DonutProfitHudClient mod, String amount) {
 		Component line = Component.literal("You have ").withStyle(ChatFormatting.WHITE)
 			.append(Component.literal("$ " + amount).withStyle(ChatFormatting.GREEN));
-		mc.getChatListener().handleSystemMessage(line, false);
+		mc.gui.chatListener().handleSystemMessage(line, false);
 		BigDecimal v = PaymentParser.parseBalance(line.getString()).orElseThrow();
 		mod.history().recordBalance(v, System.currentTimeMillis(), DonutProfitHudClient.zone(), mod.config().dayStartHour);
 		mod.saveHistory();
 	}
 
 	private static void shot(Minecraft mc, String name) {
-		Screenshot.grab(mc.gameDirectory, name + ".png", mc.getMainRenderTarget(), 1, msg -> { });
+		Screenshot.grab(mc.gameDirectory, name + ".png", mc.gameRenderer.mainRenderTarget(), 1, msg -> { });
 		DonutProfitHudClient.LOGGER.info("demo screenshot saved: {}", name);
 	}
 
@@ -256,23 +255,23 @@ public final class DemoScreenshots implements ClientModInitializer {
 		}
 
 		@Override
-		public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+		public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
 			g.fill(0, 0, width, height, 0xF0101018);
-			g.drawCenteredString(font, "Banner fonts", width / 2, 10, 0xFFFFD700);
+			g.centeredText(font, "Banner fonts", width / 2, 10, 0xFFFFD700);
 			HudFonts.Choice[] all = HudFonts.Choice.values();
 			int rowH = Math.max(22, (height - 40) / all.length);
 			for (int i = 0; i < all.length; i++) {
 				HudFonts.Choice f = all[i];
 				int y = 30 + i * rowH;
-				g.drawString(font, f.title, 20, y + 4, 0xFFAAAAAA, true);
+				g.text(font, f.title, 20, y + 4, 0xFFAAAAAA, true);
 				g.pose().pushMatrix();
 				g.pose().translate(110, y);
 				g.pose().scale(1.5f, 1.5f);
 				Component label = HudFonts.preview(f, "Today: ");
 				Component value = HudFonts.preview(f, "+$12.4M");
-				g.drawString(font, label, 0, 0, 0xFFFFFFFF, true);
-				g.drawString(font, value, font.width(label), 0, 0xFF55FF55, true);
-				g.drawString(font, HudFonts.preview(f, "   Bal: $345,496,203"), font.width(label) + font.width(value), 0, 0xFFDDDDDD, true);
+				g.text(font, label, 0, 0, 0xFFFFFFFF, true);
+				g.text(font, value, font.width(label), 0, 0xFF55FF55, true);
+				g.text(font, HudFonts.preview(f, "   Bal: $345,496,203"), font.width(label) + font.width(value), 0, 0xFFDDDDDD, true);
 				g.pose().popMatrix();
 			}
 		}

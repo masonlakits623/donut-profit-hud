@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -109,12 +109,12 @@ public final class HudRenderer {
 		return below * c.scale;
 	}
 
-	static void renderHud(GuiGraphics g) {
+	static void renderHud(GuiGraphicsExtractor g) {
 		DonutProfitHudClient mod = DonutProfitHudClient.get();
 		if (mod == null || !mod.config().visible) return;
 		Minecraft mc = Minecraft.getInstance();
-		if (mc.options.hideGui) return;
-		if (mc.screen instanceof SettingsScreen) return; // the editor draws its own live copy
+		if (mc.gui.hud.isHidden()) return;
+		if (mc.gui.screen() instanceof SettingsScreen) return; // the editor draws its own live copy
 		long now = System.currentTimeMillis();
 		HudConfig c = mod.config();
 		render(g, c, liveView(mod), c.flashEnabled ? mod.flash().active(now, c.flashMs) : null,
@@ -131,7 +131,7 @@ public final class HudRenderer {
 	}
 
 	/** Shared by the HUD and the editor. */
-	static void render(GuiGraphics g, HudConfig c, View v, BigDecimal flashDelta, float flashAlpha) {
+	static void render(GuiGraphicsExtractor g, HudConfig c, View v, BigDecimal flashDelta, float flashAlpha) {
 		Font font = Minecraft.getInstance().font;
 		Box box = layout(c, v, g.guiWidth());
 		int bw = Math.max(0, c.borderWidth);
@@ -147,14 +147,14 @@ public final class HudRenderer {
 		int tx = left + bw + PAD_X;
 		int ty = bw + PAD_Y;
 		Component label = line1Label(c);
-		g.drawString(font, label, tx, ty, 0xFF000000 | c.labelColor, c.textShadow);
-		g.drawString(font, line1Value(c, v.net()), tx + font.width(label), ty, 0xFF000000 | netColor(c, v.net()), c.textShadow);
+		g.text(font, label, tx, ty, 0xFF000000 | c.labelColor, c.textShadow);
+		g.text(font, line1Value(c, v.net()), tx + font.width(label), ty, 0xFF000000 | netColor(c, v.net()), c.textShadow);
 		if (c.showBalance) {
 			int y2 = ty + font.lineHeight + LINE_GAP;
 			Component bl = line2Label(c);
-			g.drawString(font, bl, tx, y2, 0xFF000000 | c.labelColor, c.textShadow);
+			g.text(font, bl, tx, y2, 0xFF000000 | c.labelColor, c.textShadow);
 			int valColor = v.balance() == null ? 0x909090 : c.zeroColor;
-			g.drawString(font, line2Value(c, v.balance()), tx + font.width(bl), y2, 0xFF000000 | valColor, c.textShadow);
+			g.text(font, line2Value(c, v.balance()), tx + font.width(bl), y2, 0xFF000000 | valColor, c.textShadow);
 		}
 
 		int below = boxH + 2;
@@ -179,12 +179,12 @@ public final class HudRenderer {
 			int fh = font.lineHeight + PAD_Y * 2 - 1;
 			int fBgPct = Math.round(c.bgOpacity * flashAlpha);
 			if (fBgPct > 0) g.fill(-fw / 2, below, -fw / 2 + fw, below + fh, argb(fBgPct, c.bgColor));
-			g.drawString(font, f, -fw / 2 + PAD_X, below + PAD_Y, (a << 24) | fColor, c.textShadow);
+			g.text(font, f, -fw / 2 + PAD_X, below + PAD_Y, (a << 24) | fColor, c.textShadow);
 		}
 		g.pose().popMatrix();
 	}
 
-	private static void panel(GuiGraphics g, HudConfig c, int x, int y, int w, int h, int bw) {
+	private static void panel(GuiGraphicsExtractor g, HudConfig c, int x, int y, int w, int h, int bw) {
 		if (c.bgOpacity > 0) g.fill(x, y, x + w, y + h, argb(c.bgOpacity, c.bgColor));
 		if (bw > 0 && c.borderOpacity > 0) {
 			int bc = argb(c.borderOpacity, c.borderColor);
@@ -196,14 +196,14 @@ public final class HudRenderer {
 	}
 
 	/** "Sun Nov 22  +$12.4M" rows for previous days; returns the height used. */
-	private static int drawHistoryList(GuiGraphics g, HudConfig c, List<DayRecord> days, int top, Font font) {
+	private static int drawHistoryList(GuiGraphicsExtractor g, HudConfig c, List<DayRecord> days, int top, Font font) {
 		int gb = Math.min(c.borderWidth, 1);
 		if (days.isEmpty()) {
 			Component none = HudFonts.text(c, "No earlier days yet");
 			int w = font.width(none) + PAD_X * 2;
 			int h = font.lineHeight + PAD_Y * 2 - 1;
 			panel(g, c, -w / 2, top, w, h, gb);
-			g.drawString(font, none, -w / 2 + PAD_X, top + PAD_Y, 0xFF909090, c.textShadow);
+			g.text(font, none, -w / 2 + PAD_X, top + PAD_Y, 0xFF909090, c.textShadow);
 			return h;
 		}
 		List<Component> dates = new ArrayList<>();
@@ -223,9 +223,9 @@ public final class HudRenderer {
 		panel(g, c, -w / 2, top, w, h, gb);
 		int y = top + PAD_Y;
 		for (int i = 0; i < days.size(); i++) {
-			g.drawString(font, dates.get(i), -w / 2 + PAD_X, y, 0xFF000000 | c.labelColor, c.textShadow);
+			g.text(font, dates.get(i), -w / 2 + PAD_X, y, 0xFF000000 | c.labelColor, c.textShadow);
 			int vx = -w / 2 + w - PAD_X - font.width(vals.get(i));
-			g.drawString(font, vals.get(i), vx, y, 0xFF000000 | netColor(c, days.get(i).net()), c.textShadow);
+			g.text(font, vals.get(i), vx, y, 0xFF000000 | netColor(c, days.get(i).net()), c.textShadow);
 			y += rowH;
 		}
 		return h;
@@ -235,7 +235,7 @@ public final class HudRenderer {
 	 * Area graph of a day's running net from day start to day end. Columns after {@code nowMs} stay empty,
 	 * so today's graph grows through the day. Green above the zero line, red below.
 	 */
-	public static void drawDayGraph(GuiGraphics g, DayRecord day, long startMs, long endMs, long nowMs,
+	public static void drawDayGraph(GuiGraphicsExtractor g, DayRecord day, long startMs, long endMs, long nowMs,
 									int x, int y, int w, int h, int posRgb, int negRgb) {
 		if (w <= 0 || h <= 0 || endMs <= startMs) return;
 		double span = endMs - startMs;

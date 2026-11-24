@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -75,7 +75,7 @@ public final class HistoryScreen extends Screen {
 		del.active = sel.count > 0 || sel.endBalance != null;
 		addRenderableWidget(del);
 		addRenderableWidget(Button.builder(Component.literal("Banner editor"),
-			b -> minecraft.setScreen(new SettingsScreen(this))).bounds(bx + bw + gap, by, bw, 20).build());
+			b -> minecraft.gui.setScreen(new SettingsScreen(this))).bounds(bx + bw + gap, by, bw, 20).build());
 		addRenderableWidget(Button.builder(Component.literal("Done"), b -> onClose())
 			.bounds(bx + (bw + gap) * 2, by, bw, 20).build());
 	}
@@ -92,9 +92,9 @@ public final class HistoryScreen extends Screen {
 	private void confirmDelete() {
 		DayRecord d = selectedDay();
 		String when = LocalDate.parse(d.date).format(TITLE_FMT);
-		minecraft.setScreen(new ConfirmScreen(yes -> {
+		minecraft.gui.setScreen(new ConfirmScreen(yes -> {
 			if (yes) mod().deleteDay(d.date);
-			minecraft.setScreen(this);
+			minecraft.gui.setScreen(this);
 		},
 			Component.literal("Delete the history for " + when + "?"),
 			Component.literal("Its payments, graph and /bal readings are removed. It cannot be undone."),
@@ -131,18 +131,18 @@ public final class HistoryScreen extends Screen {
 	// ------------------------------------------------------------------ render
 
 	@Override
-	public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
-		super.render(g, mouseX, mouseY, delta);
+	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+		super.extractRenderState(g, mouseX, mouseY, delta);
 		HudConfig c = mod().config();
-		g.drawCenteredString(font, title, width / 2, 8, 0xFFFFFFFF);
+		g.centeredText(font, title, width / 2, 8, 0xFFFFFFFF);
 
 		renderList(g, c, mouseX, mouseY);
 		renderDay(g, c, mouseX, mouseY);
 	}
 
-	private void renderList(GuiGraphics g, HudConfig c, int mouseX, int mouseY) {
+	private void renderList(GuiGraphicsExtractor g, HudConfig c, int mouseX, int mouseY) {
 		g.fill(listX - 2, listY - 2, listX + LIST_W + 2, listBottom + 2, 0x90000000);
-		g.renderOutline(listX - 2, listY - 2, LIST_W + 4, listBottom - listY + 4, 0xFF505060);
+		g.outline(listX - 2, listY - 2, LIST_W + 4, listBottom - listY + 4, 0xFF505060);
 		g.enableScissor(listX, listY, listX + LIST_W, listBottom);
 		String todayKey = mod().todayKey();
 		for (int i = 0; i < days.size(); i++) {
@@ -155,10 +155,10 @@ public final class HistoryScreen extends Screen {
 			if (sel) g.fill(listX, y, listX + LIST_W, y + ROW, 0x60FFD700);
 			else if (hover) g.fill(listX, y, listX + LIST_W, y + ROW, 0x30FFFFFF);
 			String name = d.date.equals(todayKey) ? "Today" : LocalDate.parse(d.date).format(LIST_FMT);
-			g.drawString(font, name, listX + 3, y + 2, sel ? 0xFFFFD700 : 0xFFDDDDDD, true);
+			g.text(font, name, listX + 3, y + 2, sel ? 0xFFFFD700 : 0xFFDDDDDD, true);
 			String v = d.count == 0 ? "-" : Money.formatSigned(d.net());
 			int vc = d.count == 0 ? 0xFF808080 : 0xFF000000 | HudRenderer.netColor(c, d.net());
-			g.drawString(font, v, listX + LIST_W - 3 - font.width(v), y + 2, vc, true);
+			g.text(font, v, listX + LIST_W - 3 - font.width(v), y + 2, vc, true);
 		}
 		g.disableScissor();
 		if (maxListScroll() > 0) {
@@ -169,7 +169,7 @@ public final class HistoryScreen extends Screen {
 		}
 	}
 
-	private void renderDay(GuiGraphics g, HudConfig c, int mouseX, int mouseY) {
+	private void renderDay(GuiGraphicsExtractor g, HudConfig c, int mouseX, int mouseY) {
 		DonutProfitHudClient m = mod();
 		DayRecord d = selectedDay();
 		LocalDate date = LocalDate.parse(d.date);
@@ -178,11 +178,11 @@ public final class HistoryScreen extends Screen {
 		long end = History.dayEndMs(date, DonutProfitHudClient.zone(), c.dayStartHour);
 		long now = isToday ? System.currentTimeMillis() : end;
 
-		g.drawString(font, date.format(TITLE_FMT) + (isToday ? "  (today)" : ""), headX, listY, 0xFFFFFFFF, true);
+		g.text(font, date.format(TITLE_FMT) + (isToday ? "  (today)" : ""), headX, listY, 0xFFFFFFFF, true);
 
 		// Graph panel
 		g.fill(gx - 1, gy - 1, gx + gw + 1, gy + gh + 1, 0x90000000);
-		g.renderOutline(gx - 2, gy - 2, gw + 4, gh + 4, 0xFF505060);
+		g.outline(gx - 2, gy - 2, gw + 4, gh + 4, 0xFF505060);
 		HudRenderer.drawDayGraph(g, d, start, end, now, gx, gy, gw, gh, c.positiveColor, c.negativeColor);
 
 		double max = 0, min = 0;
@@ -193,15 +193,15 @@ public final class HistoryScreen extends Screen {
 		}
 		if (d.points().isEmpty()) {
 			String none = isToday ? "No payments yet today" : "No payments this day";
-			g.drawCenteredString(font, none, gx + gw / 2, gy + gh / 2 - 4, 0xFF909090);
+			g.centeredText(font, none, gx + gw / 2, gy + gh / 2 - 4, 0xFF909090);
 		} else {
 			String top = Money.formatSigned(BigDecimal.valueOf(max));
 			String bottom = Money.formatSigned(BigDecimal.valueOf(min));
-			g.drawString(font, top, gx - 4 - font.width(top), gy, 0xFFAAAAAA, true);
-			g.drawString(font, bottom, gx - 4 - font.width(bottom), gy + gh - 8, 0xFFAAAAAA, true);
+			g.text(font, top, gx - 4 - font.width(top), gy, 0xFFAAAAAA, true);
+			g.text(font, bottom, gx - 4 - font.width(bottom), gy + gh - 8, 0xFFAAAAAA, true);
 			if (max > 0 && min < 0) {
 				int zeroY = gy + (int) Math.round(max / (max - min) * (gh - 1));
-				if (zeroY > gy + 10 && zeroY < gy + gh - 18) g.drawString(font, "$0", gx - 4 - font.width("$0"), zeroY - 4, 0xFF808080, true);
+				if (zeroY > gy + 10 && zeroY < gy + gh - 18) g.text(font, "$0", gx - 4 - font.width("$0"), zeroY - 4, 0xFF808080, true);
 			}
 		}
 
@@ -211,7 +211,7 @@ public final class HistoryScreen extends Screen {
 			int x = gx + k * gw / 4 - font.width(t) / 2;
 			x = Math.max(gx - 2, Math.min(gx + gw - font.width(t) + 2, x));
 			g.fill(gx + k * gw / 4, gy + gh + 1, gx + k * gw / 4 + 1, gy + gh + 3, 0xFF808080);
-			g.drawString(font, t, x, gy + gh + 4, 0xFF909090, true);
+			g.text(font, t, x, gy + gh + 4, 0xFF909090, true);
 		}
 
 		// Hover readout
@@ -223,29 +223,29 @@ public final class HistoryScreen extends Screen {
 				String read = Instant.ofEpochMilli(t).atZone(DonutProfitHudClient.zone()).format(TIME_FMT) + "  " + Money.formatSigned(v);
 				int rx = Math.min(gx + gw - font.width(read) - 2, mouseX + 4);
 				g.fill(rx - 2, gy + 1, rx + font.width(read) + 2, gy + 12, 0xC0000000);
-				g.drawString(font, read, rx, gy + 3, 0xFF000000 | HudRenderer.netColor(c, v), true);
+				g.text(font, read, rx, gy + 3, 0xFF000000 | HudRenderer.netColor(c, v), true);
 			}
 		}
 
 		// Totals
 		int sy = gy + gh + 16;
 		int col2 = headX + Math.max(150, (width - 10 - headX) / 2);
-		g.drawString(font, "Received: " + exact(d.received()), headX, sy, 0xFF55FF55, true);
-		g.drawString(font, "Paid: " + exact(d.paid()), col2, sy, 0xFFFF5555, true);
+		g.text(font, "Received: " + exact(d.received()), headX, sy, 0xFF55FF55, true);
+		g.text(font, "Paid: " + exact(d.paid()), col2, sy, 0xFFFF5555, true);
 		String net = (d.net().signum() > 0 ? "+" : "") + exact(d.net());
-		g.drawString(font, "Net: " + net, headX, sy + 11, 0xFF000000 | HudRenderer.netColor(c, d.net()), true);
-		g.drawString(font, "Payments: " + d.count, col2, sy + 11, 0xFFCCCCCC, true);
+		g.text(font, "Net: " + net, headX, sy + 11, 0xFF000000 | HudRenderer.netColor(c, d.net()), true);
+		g.text(font, "Payments: " + d.count, col2, sy + 11, 0xFFCCCCCC, true);
 		if (d.endBalance == null) {
-			g.drawString(font, isToday ? "Balance: type /bal to record it" : "Balance: not checked this day", headX, sy + 22, 0xFF909090, true);
+			g.text(font, isToday ? "Balance: type /bal to record it" : "Balance: not checked this day", headX, sy + 22, 0xFF909090, true);
 		} else {
 			String bal = "Balance: " + exact(d.endBalance) + " at "
 				+ Instant.ofEpochMilli(d.endBalanceAt).atZone(DonutProfitHudClient.zone()).format(TIME_FMT);
-			g.drawString(font, bal, headX, sy + 22, 0xFFFFFFFF, true);
+			g.text(font, bal, headX, sy + 22, 0xFFFFFFFF, true);
 			BigDecimal ch = d.balanceChange();
 			if (ch != null) {
 				String s = "Since " + Instant.ofEpochMilli(d.startBalanceAt).atZone(DonutProfitHudClient.zone()).format(TIME_FMT)
 					+ ": " + (ch.signum() > 0 ? "+" : "") + exact(ch) + " (all sources)";
-				g.drawString(font, s, headX, sy + 33, 0xFF000000 | HudRenderer.netColor(c, ch), true);
+				g.text(font, s, headX, sy + 33, 0xFF000000 | HudRenderer.netColor(c, ch), true);
 			}
 		}
 	}
@@ -258,7 +258,7 @@ public final class HistoryScreen extends Screen {
 
 	@Override
 	public void onClose() {
-		minecraft.setScreen(parent);
+		minecraft.gui.setScreen(parent);
 	}
 
 	@Override

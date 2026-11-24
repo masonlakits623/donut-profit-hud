@@ -17,7 +17,7 @@ import java.util.Locale;
 import java.util.Optional;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.loader.api.FabricLoader;
@@ -28,7 +28,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentContents;
 import net.minecraft.network.chat.contents.ObjectContents;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,12 +69,12 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 		history = historyStore.load();
 
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
-		toggleKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-			"key.donutprofithud.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
-		settingsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-			"key.donutprofithud.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
-		historyKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-			"key.donutprofithud.history", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H, category));
+		toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+			"key.donutprofithud.toggle", InputConstants.Type.KEYBOARD, InputConstants.KEY_J, category));
+		settingsKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+			"key.donutprofithud.settings", InputConstants.Type.KEYBOARD, InputConstants.KEY_K, category));
+		historyKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+			"key.donutprofithud.history", InputConstants.Type.KEYBOARD, InputConstants.KEY_H, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleKey.consumeClick()) {
@@ -83,10 +82,10 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 				saveConfig();
 			}
 			while (settingsKey.consumeClick()) {
-				if (client.screen == null) client.setScreen(new SettingsScreen(null));
+				if (client.gui.screen() == null) client.gui.setScreen(new SettingsScreen(null));
 			}
 			while (historyKey.consumeClick()) {
-				if (client.screen == null) client.setScreen(new HistoryScreen(null));
+				if (client.gui.screen() == null) client.gui.setScreen(new HistoryScreen(null));
 			}
 		});
 
@@ -143,7 +142,7 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 
 	private boolean onTrackedServer() {
 		Minecraft mc = Minecraft.getInstance();
-		if (mc.isSingleplayer()) return false;
+		if (mc.hasSingleplayerServer()) return false;
 		if (!config.donutOnly) return true;
 		ServerData server = mc.getCurrentServer();
 		if (server == null || server.ip == null) return false;
