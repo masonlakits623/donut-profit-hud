@@ -1,7 +1,10 @@
 package dev.donutprofithud;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.donutprofithud.core.DayRecord;
 import dev.donutprofithud.core.FlashTracker;
+import dev.donutprofithud.core.History;
+import dev.donutprofithud.core.HistoryStore;
 import dev.donutprofithud.core.Ledger;
 import dev.donutprofithud.core.Payment;
 import dev.donutprofithud.core.PaymentParser;
@@ -9,6 +12,7 @@ import dev.donutprofithud.core.SessionStore;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.time.ZoneId;
 import java.util.Locale;
 import java.util.Optional;
 import net.fabricmc.api.ClientModInitializer;
@@ -42,10 +46,13 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 	private HudConfig config;
 	private SessionStore sessionStore;
 	private Ledger ledger;
+	private HistoryStore historyStore;
+	private History history;
 	private final FlashTracker flash = new FlashTracker();
 
 	private KeyMapping toggleKey;
 	private KeyMapping settingsKey;
+	private KeyMapping historyKey;
 
 	public static DonutProfitHudClient get() {
 		return instance;
@@ -59,12 +66,16 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 		config = HudConfig.load(configFile);
 		sessionStore = new SessionStore(configDir.resolve("donutprofithud-session.properties"));
 		ledger = sessionStore.load();
+		historyStore = new HistoryStore(configDir.resolve("donutprofithud-history.json"));
+		history = historyStore.load();
 
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
 		toggleKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.donutprofithud.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
 		settingsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.donutprofithud.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
+		historyKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+			"key.donutprofithud.history", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleKey.consumeClick()) {
@@ -74,6 +85,9 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 			while (settingsKey.consumeClick()) {
 				if (client.screen == null) client.setScreen(new SettingsScreen(null));
 			}
+			while (historyKey.consumeClick()) {
+				if (client.screen == null) client.setScreen(new HistoryScreen(null));
+			}
 		});
 
 		// System/game messages only. Signed player chat (CHAT event) is deliberately ignored.
@@ -82,20 +96,49 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 		HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "banner"),
 			(graphics, tickCounter) -> HudRenderer.renderHud(graphics));
 
-		LOGGER.info("Donut Profit HUD loaded (session net {} from {} payments)", ledger.net().toPlainString(), ledger.count());
+		LOGGER.info("Donut Profit HUD loaded (session net {} from {} payments, {} days of history)",
+			ledger.net().toPlainString(), ledger.count(), history.daysNewestFirst().size());
 	}
 
 	private void onGameMessage(Component message, boolean overlay) {
 		if (overlay) return; // action bar, never a payment confirmation
 		if (!onTrackedServer()) return;
 		String text = plainTextWithoutIcons(message);
+		long now = System.currentTimeMillis();
+		Optional<BigDecimal> balance = PaymentParser.parseBalance(text);
+		if (balance.isPresent()) {
+			// Reply to a /bal the player typed. The mod never sends /bal itself.
+			history.recordBalance(balance.get(), now, zone(), config.dayStartHour);
+			saveHistory();
+			return;
+		}
 		Optional<Payment> parsed = PaymentParser.parse(text);
 		if (parsed.isEmpty()) return;
 		Payment payment = parsed.get();
 		if (payment.away() && !config.countAway) return;
 		BigDecimal delta = ledger.apply(payment, config.includeTax);
-		if (config.flashEnabled) flash.trigger(delta, System.currentTimeMillis());
+		history.applyPayment(payment, config.includeTax, now, zone(), config.dayStartHour);
+		if (config.flashEnabled) flash.trigger(delta, now);
 		saveSession();
+		saveHistory();
+	}
+
+	public static ZoneId zone() {
+		return ZoneId.systemDefault();
+	}
+
+	/** Key of the current day ("2026-11-23"), using the configured day start hour. */
+	public String todayKey() {
+		return History.keyOf(System.currentTimeMillis(), zone(), config.dayStartHour);
+	}
+
+	public DayRecord today() {
+		return history.day(todayKey());
+	}
+
+	/** The number on the banner: today's profit or the session total, depending on the setting. */
+	public BigDecimal shownNet() {
+		return config.shows == HudConfig.Shows.SESSION ? ledger.net() : today().net();
 	}
 
 	private boolean onTrackedServer() {
@@ -140,6 +183,10 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 		return ledger;
 	}
 
+	public History history() {
+		return history;
+	}
+
 	public FlashTracker flash() {
 		return flash;
 	}
@@ -152,6 +199,30 @@ public final class DonutProfitHudClient implements ClientModInitializer {
 		ledger.reset();
 		flash.clear();
 		saveSession();
+	}
+
+	/** Resets what the banner shows: today's payments (TODAY) or the session totals (SESSION). */
+	public void resetShown() {
+		if (config.shows == HudConfig.Shows.SESSION) {
+			resetSession();
+		} else {
+			history.resetDayPayments(todayKey());
+			flash.clear();
+			saveHistory();
+		}
+	}
+
+	public void deleteDay(String key) {
+		history.deleteDay(key);
+		saveHistory();
+	}
+
+	public void saveHistory() {
+		try {
+			historyStore.save(history);
+		} catch (IOException e) {
+			LOGGER.warn("Could not save history", e);
+		}
 	}
 
 	private void saveSession() {

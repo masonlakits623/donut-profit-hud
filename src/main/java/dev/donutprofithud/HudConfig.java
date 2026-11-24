@@ -13,8 +13,29 @@ import java.nio.file.StandardCopyOption;
 public final class HudConfig {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+	/** What the banner's main number shows. */
+	public enum Shows { TODAY, SESSION }
+
+	/** What is drawn under the banner. */
+	public enum Extra { NONE, GRAPH, HISTORY }
+
 	public boolean visible = true;
-	public String label = "Net";
+	public String label = "Today";
+	/** TODAY = profit since the day started (resets every day); SESSION = since the last manual reset. */
+	public Shows shows = Shows.TODAY;
+	/** Second banner line with the last balance seen from /bal. */
+	public boolean showBalance = true;
+	public Extra extra = Extra.GRAPH;
+	/** Size of the profit graph under the banner, in banner pixels. */
+	public int graphWidth = 100;
+	public int graphHeight = 30;
+	/** Number of previous days listed when {@link #extra} is HISTORY. */
+	public int historyDays = 5;
+	/** Hour (0-23, local time) when a new day starts and today's profit goes back to 0. */
+	public int dayStartHour = 0;
+	public HudFonts.Choice font = HudFonts.Choice.DEFAULT;
+	public boolean bold = false;
+	public boolean italic = false;
 	/** Horizontal centre of the banner as a fraction of the screen width (0.5 = top centre). */
 	public double xFraction = 0.5;
 	/** Distance of the banner from the top of the screen, in GUI pixels. */
@@ -41,12 +62,21 @@ public final class HudConfig {
 	/** Only count messages while connected to a server whose address contains {@link #serverMatch}. */
 	public boolean donutOnly = true;
 	public String serverMatch = "donutsmp";
+	/** 0 = written by 1.0.0 (or new); 2 = 1.1.0 or later. Used for one-time upgrades of old settings. */
+	public int configVersion = 0;
 
 	public static HudConfig load(Path file) {
 		if (Files.isRegularFile(file)) {
 			try (Reader r = Files.newBufferedReader(file)) {
 				HudConfig c = GSON.fromJson(r, HudConfig.class);
-				if (c != null) return c.sanitize();
+				if (c != null) {
+					if (c.configVersion < 2) {
+						// 1.0.0's default label "Net" sat over the all-time total; the banner now shows today's profit.
+						if ("Net".equals(c.label)) c.label = "Today";
+						c.configVersion = 2;
+					}
+					return c.sanitize();
+				}
 			} catch (IOException | RuntimeException e) {
 				DonutProfitHudClient.LOGGER.warn("Could not read {}, using defaults", file, e);
 			}
@@ -68,7 +98,14 @@ public final class HudConfig {
 	}
 
 	public HudConfig sanitize() {
-		if (label == null) label = "Net";
+		if (label == null) label = "Today";
+		if (shows == null) shows = Shows.TODAY;
+		if (extra == null) extra = Extra.GRAPH;
+		if (font == null) font = HudFonts.Choice.DEFAULT;
+		graphWidth = (int) clamp(graphWidth, 40, 300);
+		graphHeight = (int) clamp(graphHeight, 12, 120);
+		historyDays = (int) clamp(historyDays, 1, 10);
+		dayStartHour = (int) clamp(dayStartHour, 0, 23);
 		if (label.length() > 32) label = label.substring(0, 32);
 		if (serverMatch == null) serverMatch = "donutsmp";
 		xFraction = clamp(xFraction, 0.0, 1.0);

@@ -31,7 +31,7 @@ import org.lwjgl.glfw.GLFW;
  */
 public final class SettingsScreen extends Screen {
 	private enum Tab {
-		BANNER("Banner", 7), COLOR("Color", 8), RULES("Rules", 6);
+		BANNER("Banner", 9), DAILY("Daily", 10), COLOR("Color", 8), RULES("Rules", 6);
 		final String title;
 		final int rows;
 		Tab(String title, int rows) { this.title = title; this.rows = rows; }
@@ -51,7 +51,7 @@ public final class SettingsScreen extends Screen {
 
 	private record Label(int row, int x, String text, int color) {}
 
-	private static final int PANEL_W = 150;
+	private static final int PANEL_W = 170;
 	private static final int ROW = 18;
 	private static final int WH = 16;
 	private static final int HANDLE = 6;
@@ -94,6 +94,10 @@ public final class SettingsScreen extends Screen {
 		return DonutProfitHudClient.get().ledger();
 	}
 
+	private static HudRenderer.View view() {
+		return HudRenderer.liveView(DonutProfitHudClient.get());
+	}
+
 	private boolean panelVisible() {
 		return panelMode != PanelMode.HIDDEN;
 	}
@@ -123,7 +127,7 @@ public final class SettingsScreen extends Screen {
 		return Math.max(0, tab.rows * ROW - (panelBottom - contentTop));
 	}
 
-	private static final int[] TOOL_WIDTHS = {52, 52, 40, 88, 62, 50, 36};
+	private static final int[] TOOL_WIDTHS = {52, 52, 40, 50, 46, 62, 50, 36};
 
 	/** Top of the toolbar: row 4 normally, but pushed below the banner (plus flash and size text) when the
 	 *  banner sits where the toolbar would be, so the toolbar never covers it. */
@@ -138,7 +142,8 @@ public final class SettingsScreen extends Screen {
 		HudRenderer.Box b = box();
 		boolean overlaps = b.top() < normalBottom + 2 && b.left() < right;
 		if (!overlaps) return 4;
-		int below = (int) Math.ceil(b.top() + b.height() * 2 + 2) + 3 + font.lineHeight + 3;
+		float stack = HudRenderer.stackHeight(cfg(), view(), b) + (font.lineHeight + 6) * cfg().scale;
+		int below = (int) Math.ceil(b.top() + stack) + 3 + font.lineHeight + 3;
 		return Math.min(below, Math.max(4, height / 2));
 	}
 
@@ -153,17 +158,18 @@ public final class SettingsScreen extends Screen {
 			c.y = 4;
 			rebuildWidgets();
 		});
-		tool("Reset Session...", TOOL_WIDTHS[3], true, this::confirmReset);
+		tool("Reset...", TOOL_WIDTHS[3], true, this::confirmReset);
+		tool("History", TOOL_WIDTHS[4], true, () -> minecraft.setScreen(new HistoryScreen(this)));
 		String pm = switch (panelMode) { case RIGHT -> "Right"; case LEFT -> "Left"; case HIDDEN -> "Off"; };
-		tool("Panel: " + pm, TOOL_WIDTHS[4], true, () -> {
+		tool("Panel: " + pm, TOOL_WIDTHS[5], true, () -> {
 			panelMode = PanelMode.values()[(panelMode.ordinal() + 1) % PanelMode.values().length];
 			rebuildWidgets();
 		});
-		tool("HUD: " + (c.visible ? "On" : "Off"), TOOL_WIDTHS[5], true, () -> {
+		tool("HUD: " + (c.visible ? "On" : "Off"), TOOL_WIDTHS[6], true, () -> {
 			c.visible = !c.visible;
 			rebuildWidgets();
 		});
-		tool("Done", TOOL_WIDTHS[6], true, this::onClose);
+		tool("Done", TOOL_WIDTHS[7], true, this::onClose);
 		toolbarBottom = ty + WH;
 	}
 
@@ -219,7 +225,7 @@ public final class SettingsScreen extends Screen {
 	// ------------------------------------------------------------------ panel
 
 	private void buildPanel() {
-		int tw = (iw - 4) / 3;
+		int tw = (iw - 6) / 4;
 		Tab[] tabs = Tab.values();
 		for (int i = 0; i < tabs.length; i++) {
 			Tab t = tabs[i];
@@ -233,6 +239,7 @@ public final class SettingsScreen extends Screen {
 		}
 		switch (tab) {
 			case BANNER -> buildBannerTab();
+			case DAILY -> buildDailyTab();
 			case COLOR -> buildColorTab();
 			case RULES -> buildRulesTab();
 		}
@@ -259,12 +266,55 @@ public final class SettingsScreen extends Screen {
 			c.y = 4;
 			rebuildWidgets();
 		}), 2);
+		HudFonts.Choice fc = c.font == null ? HudFonts.Choice.DEFAULT : c.font;
+		panel(Button.builder(Component.literal("Font: ").append(HudFonts.preview(fc, fc.title)), b -> {
+			c.font = fc.next();
+			rebuildWidgets();
+		}).bounds(px, 0, iw, WH).build(), 3);
+		panel(toggle(px, half, "Bold", () -> c.bold, v -> c.bold = v), 4);
+		panel(toggle(px + half + 4, half, "Italic", () -> c.italic, v -> c.italic = v), 4);
 		panel(new Slider(px, iw, "Border width", 0, 4, 1, c.borderWidth,
-			v -> Integer.toString((int) Math.round(v)), v -> c.borderWidth = (int) Math.round(v)), 3);
-		panel(toggle(px, iw, "Text shadow", () -> c.textShadow, v -> c.textShadow = v), 4);
-		panel(toggle(px, iw, "Flash payments", () -> c.flashEnabled, v -> c.flashEnabled = v), 5);
+			v -> Integer.toString((int) Math.round(v)), v -> c.borderWidth = (int) Math.round(v)), 5);
+		panel(toggle(px, iw, "Text shadow", () -> c.textShadow, v -> c.textShadow = v), 6);
+		panel(toggle(px, iw, "Flash payments", () -> c.flashEnabled, v -> c.flashEnabled = v), 7);
 		panel(new Slider(px, iw, "Flash time", 0.5, 10, 0.5, c.flashMs / 1000.0,
-			v -> String.format(Locale.ROOT, "%.1fs", v), v -> c.flashMs = (int) Math.round(v * 1000)), 6);
+			v -> String.format(Locale.ROOT, "%.1fs", v), v -> c.flashMs = (int) Math.round(v * 1000)), 8);
+	}
+
+	private void buildDailyTab() {
+		HudConfig c = cfg();
+		DonutProfitHudClient mod = DonutProfitHudClient.get();
+		boolean today = c.shows != HudConfig.Shows.SESSION;
+		panel(button(px, iw, "Shows: " + (today ? "Today's profit" : "Session total"), () -> {
+			c.shows = today ? HudConfig.Shows.SESSION : HudConfig.Shows.TODAY;
+			// Keep the default label in step with what is shown.
+			if (today && "Today".equals(c.label)) c.label = "Session";
+			else if (!today && "Session".equals(c.label)) c.label = "Today";
+			rebuildWidgets();
+		}), 0);
+		panel(toggle(px, iw, "Balance line", () -> c.showBalance, v -> c.showBalance = v), 1);
+		String under = switch (c.extra) { case NONE -> "Nothing"; case GRAPH -> "Today's graph"; case HISTORY -> "Past days"; };
+		panel(button(px, iw, "Under banner: " + under, () -> {
+			c.extra = HudConfig.Extra.values()[(c.extra.ordinal() + 1) % HudConfig.Extra.values().length];
+			rebuildWidgets();
+		}), 2);
+		Slider gw = panel(new Slider(px, iw, "Graph width", 40, 300, 5, c.graphWidth,
+			Slider::fmtInt, v -> c.graphWidth = (int) Math.round(v)), 3);
+		Slider gh = panel(new Slider(px, iw, "Graph height", 12, 120, 2, c.graphHeight,
+			Slider::fmtInt, v -> c.graphHeight = (int) Math.round(v)), 4);
+		gw.active = gh.active = c.extra == HudConfig.Extra.GRAPH;
+		Slider hd = panel(new Slider(px, iw, "Past days shown", 1, 10, 1, c.historyDays,
+			Slider::fmtInt, v -> c.historyDays = (int) Math.round(v)), 5);
+		hd.active = c.extra == HudConfig.Extra.HISTORY;
+		panel(new Slider(px, iw, "New day at", 0, 23, 1, c.dayStartHour,
+			v -> String.format(Locale.ROOT, "%02d:00", (int) Math.round(v)), v -> c.dayStartHour = (int) Math.round(v)), 6);
+		panel(button(px, iw, "Open history (H)", () -> minecraft.setScreen(new HistoryScreen(this))), 7);
+		var d = mod.today();
+		label(8, px, "Today: " + Money.formatSigned(d.net()) + " (" + d.count + " payments)",
+			0xFF000000 | HudRenderer.netColor(c, d.net()));
+		BigDecimal bal = mod.history().lastBalance();
+		label(9, px, bal == null ? "Balance: type /bal to record it" : "Last /bal: " + Money.format(bal),
+			bal == null ? 0xFF909090 : 0xFFCCCCCC);
 	}
 
 	private void buildRulesTab() {
@@ -273,9 +323,9 @@ public final class SettingsScreen extends Screen {
 		panel(toggle(px, iw, "DonutSMP only", () -> c.donutOnly, v -> c.donutOnly = v), 1);
 		panel(toggle(px, iw, "Count away pay", () -> c.countAway, v -> c.countAway = v), 2);
 		Ledger l = ledger();
-		label(3, px, "Received: " + Money.format(l.received()), 0xFF55FF55);
-		label(4, px, "Paid: " + Money.format(l.paid()), 0xFFFF5555);
-		label(5, px, "Payments: " + l.count(), 0xFFCCCCCC);
+		label(3, px, "Session received: " + Money.format(l.received()), 0xFF55FF55);
+		label(4, px, "Session paid: " + Money.format(l.paid()), 0xFFFF5555);
+		label(5, px, "Session payments: " + l.count(), 0xFFCCCCCC);
 	}
 
 	private void buildColorTab() {
@@ -387,12 +437,15 @@ public final class SettingsScreen extends Screen {
 	// ------------------------------------------------------------------ actions
 
 	private void confirmReset() {
+		boolean session = cfg().shows == HudConfig.Shows.SESSION;
 		minecraft.setScreen(new ConfirmScreen(yes -> {
-			if (yes) DonutProfitHudClient.get().resetSession();
+			if (yes) DonutProfitHudClient.get().resetShown();
 			minecraft.setScreen(this);
 		},
-			Component.literal("Reset session totals?"),
-			Component.literal("This sets received, paid, net and the payment count back to 0. It cannot be undone."),
+			Component.literal(session ? "Reset session totals?" : "Reset today's profit?"),
+			Component.literal(session
+				? "This sets received, paid, net and the payment count back to 0. It cannot be undone."
+				: "This clears today's payments and graph (your /bal readings stay). It cannot be undone."),
 			Component.literal("Reset"),
 			Component.literal("Cancel")));
 	}
@@ -400,7 +453,7 @@ public final class SettingsScreen extends Screen {
 	// ------------------------------------------------------------------ input
 
 	private HudRenderer.Box box() {
-		return HudRenderer.layout(cfg(), ledger().net(), width);
+		return HudRenderer.layout(cfg(), view(), width);
 	}
 
 	private boolean inPanel(double mx, double my) {
@@ -531,11 +584,12 @@ public final class SettingsScreen extends Screen {
 		HudConfig c = cfg();
 		long now = System.currentTimeMillis();
 		BigDecimal f = c.flashEnabled ? previewFlash.active(now, c.flashMs) : null;
-		HudRenderer.render(g, c, ledger().net(), f, previewFlash.alpha(now, c.flashMs));
+		HudRenderer.View v = view();
+		HudRenderer.render(g, c, v, f, previewFlash.alpha(now, c.flashMs));
 		g.nextStratum();
 
 		// Selection outline, resize handle and size readout
-		HudRenderer.Box b = box();
+		HudRenderer.Box b = HudRenderer.layout(c, v, width);
 		int bx = (int) Math.floor(b.left()), by = (int) Math.floor(b.top());
 		int bw = (int) Math.ceil(b.width()), bh = (int) Math.ceil(b.height());
 		boolean hover = drag == Drag.NONE && !inPanel(mouseX, mouseY) && b.contains(mouseX, mouseY);
@@ -544,7 +598,8 @@ public final class SettingsScreen extends Screen {
 		// Handle sits on the corner, outside the box, so it never covers the amount.
 		g.fill(hx - 1, hy - 1, hx + HANDLE - 1, hy + HANDLE - 1, 0xFFFFD700);
 		String info = "Size " + Math.round(c.scale * 100) + "%" + (c.visible ? "" : "  (hidden in HUD)");
-		int infoY = by + bh + 3 + (f != null ? Math.round(b.height() + 2) : 0);
+		int infoY = by + Math.round(HudRenderer.stackHeight(c, v, b)) + 3
+			+ (f != null ? Math.round((font.lineHeight + 6) * c.scale) : 0);
 		g.drawString(font, info, bx, Math.min(infoY, height - 24), c.visible ? 0xFFFFD700 : 0xFFFF5555, true);
 
 		if (panelVisible()) {

@@ -40,6 +40,9 @@ public final class PaymentParser {
 	/** Join summary of payments received while offline: "You were paid $ 4.8M while you were away". */
 	private static final Pattern AWAY = Pattern.compile("^You were paid " + AMT + " while you were away$");
 
+	/** Reply to the /bal command the player types themselves: "You have $ 330,496,203". */
+	private static final Pattern BALANCE = Pattern.compile("^You have " + AMT + "$");
+
 	/** Legacy formatting codes such as "§a" that some servers embed in literal text. */
 	private static final Pattern SECTION_CODES = Pattern.compile("§.");
 
@@ -74,6 +77,20 @@ public final class PaymentParser {
 			return Optional.of(new Payment(Payment.Direction.INCOMING, "(while away)", amount, BigDecimal.ZERO, true));
 		}
 		return Optional.empty();
+	}
+
+	/**
+	 * Parses DonutSMP's balance line ("You have $ 330,496,203"), which the server sends when the player
+	 * types /bal. The mod never sends /bal itself. Returns empty for anything else.
+	 */
+	public static Optional<BigDecimal> parseBalance(String rawPlainText) {
+		if (rawPlainText == null) return Optional.empty();
+		String text = normalize(rawPlainText);
+		if (text.isEmpty() || text.length() > 60) return Optional.empty();
+		Matcher m = BALANCE.matcher(text);
+		if (!m.matches()) return Optional.empty();
+		BigDecimal amount = Money.parse(m.group("amt"));
+		return amount == null || amount.signum() < 0 ? Optional.empty() : Optional.of(amount);
 	}
 
 	/**
